@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>Alarm System Dashboard</title>
+        <link rel="stylesheet" href="styles.css" />
+    </head>
+
+    <body>
+        <h1>Alarm System Dashboard</h1>
+        <div id="status">Waiting for data...</div>
+
+        <input type="text" id="commandInput" placeholder="Enter command" />
+        <button id="commandBtn">Send Command</button>
+
+        <script src="/socket.io/socket.io.js"></script>
+        <script src="client.js"></script>
+    </body>
+</html>
