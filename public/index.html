@@ -2,16 +2,71 @@
 <html lang="en">
     <head>
         <meta charset="UTF-8" />
-        <title>Alarm System Dashboard</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Smart Home Security System</title>
         <link rel="stylesheet" href="styles.css" />
     </head>
 
     <body>
-        <h1>Alarm System Dashboard</h1>
-        <div id="status">Waiting for data...</div>
+        <div class="dashboard">
+            <header>
+                <h1>Smart Home Security System</h1>
+                <div id="connectionStatus" class="connection-indicator"></div>
+            </header>
 
-        <input type="text" id="commandInput" placeholder="Enter command" />
-        <button id="commandBtn">Send Command</button>
+            <main>
+                <section class="status-panel">
+                    <h2>System Status</h2>
+                    <div class="status-grid">
+                        <div class="status-item">
+                            <label>System State:</label>
+                            <span id="armedStatus">--</span>
+                        </div>
+                        <div class="status-item">
+                            <label>Activity:</label>
+                            <span id="activeStatus">--</span>
+                        </div>
+                        <div class="status-item">
+                            <label>Temperature:</label>
+                            <span id="tempStatus">--</span>
+                        </div>
+                    </div>
+                    <div id="lastUpdate" class="last-update">
+                        Last Update: --
+                    </div>
+                </section>
+
+                <section class="controls-panel">
+                    <h2>System Controls</h2>
+                    <div class="control-group">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="armToggle" />
+                            <span class="slider"></span>
+                            <span class="label">Arm System</span>
+                        </label>
+                    </div>
+
+                    <form id="commandForm" class="command-form">
+                        <input
+                            type="text"
+                            id="commandInput"
+                            placeholder="Enter command..."
+                        />
+                        <button type="submit">Send Command</button>
+                    </form>
+                </section>
+
+                <section class="notifications-panel">
+                    <div class="notifications-header">
+                        <h2>Notifications</h2>
+                        <button id="clearNotifications" class="clear-btn">
+                            Clear All
+                        </button>
+                    </div>
+                    <div id="notifications" class="notifications-list"></div>
+                </section>
+            </main>
+        </div>
 
         <script src="/socket.io/socket.io.js"></script>
         <script src="client.js"></script>

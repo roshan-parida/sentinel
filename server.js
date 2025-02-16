@@ -1,36 +1,63 @@
 const express = require("express");
 const http = require("http");
 const socketIo = require("socket.io");
-const SerialPort = require("serialport");
+const { SerialPort } = require("serialport");
 
-const ARDUINO_PORT = "COM3";
+// Adjust this port to match your Arduino’s USB port
+const ARDUINO_PORT = "COM5";
 const BAUD_RATE = 115200;
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
-// Serve static files from the 'public' directory
+// Serve static files from 'public' directory
 app.use(express.static("public"));
 
-// Open the serial port connection to Arduino
-const arduinoPort = new SerialPort(ARDUINO_PORT, { baudRate: BAUD_RATE });
+// Open the serial port connection to Arduino using options object
+const arduinoPort = new SerialPort({ path: ARDUINO_PORT, baudRate: BAUD_RATE });
+let serialBuffer = "";
 
-// When data comes from Arduino, broadcast it to connected clients
-arduinoPort.on("data", (data) => {
-    // For example, assume Arduino sends JSON strings:
-    const message = data.toString().trim();
-    console.log("From Arduino:", message);
-    io.emit("serialData", message);
+// Add error handler for the serial port
+arduinoPort.on("error", (err) => {
+    console.error("Serial Port Error:", err);
 });
 
-// Handle incoming socket connections from web clients
+arduinoPort.on("data", (data) => {
+    // Append incoming data to our buffer
+    serialBuffer += data.toString();
+
+    // Split incoming data by newline (assuming Arduino ends messages with '\n')
+    let lines = serialBuffer.split("\n");
+    // The last element may be incomplete; keep it in the buffer
+    serialBuffer = lines.pop();
+
+    lines.forEach((line) => {
+        line = line.trim();
+        if (line) {
+            try {
+                const status = JSON.parse(line);
+                console.log("Status from Arduino:", status);
+                // Broadcast the parsed status to all connected clients
+                io.emit("status", status);
+            } catch (e) {
+                console.error("Error parsing JSON:", line);
+            }
+        }
+    });
+});
+
+// Handle socket connections
 io.on("connection", (socket) => {
     console.log("Client connected");
 
-    // Listen for commands from the client to send to Arduino
+    // Listen for commands from the client
     socket.on("command", (cmd) => {
         console.log("Command from client:", cmd);
+        // Append a newline if missing so the Arduino reads the full command
+        if (!cmd.endsWith("\n")) {
+            cmd += "\n";
+        }
         arduinoPort.write(cmd);
     });
 
@@ -39,7 +66,7 @@ io.on("connection", (socket) => {
     });
 });
 
-// Start server on port 3000
+// Start the server on port 3000
 server.listen(3000, () => {
-    console.log("Server listening on http://localhost:3000");
+    console.log("Server running at http://localhost:3000");
 });

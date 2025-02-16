@@ -16,7 +16,7 @@ namespace AlarmSystem {
   constexpr uint8_t BUZZER_PIN = 8;
   constexpr uint8_t LED_PIN    = 5;
   
-  // Thermistor pin (A5 is reserved for the thermistor)
+  // Thermistor pin
   constexpr uint8_t THERMISTOR_PIN = A5;
   
   // Valid RFID UID
@@ -41,6 +41,7 @@ namespace AlarmSystem {
     {'7','8','9','C'},
     {'*','0','#','D'}
   };
+  
   byte rowPins[KEYPAD_ROWS] = {A0, A1, A2, A3};
   byte colPins[KEYPAD_COLS] = {A4, 2, 3, 4};
   
@@ -49,7 +50,7 @@ namespace AlarmSystem {
   // ------------------------
   // System configuration
   // ------------------------
-  const String NEW_PASSCODE = "1234";
+  const String NEW_PASSCODE = "1234"; // Passcode for keypad activation
   
   // ------------------------
   // State variables
@@ -59,7 +60,7 @@ namespace AlarmSystem {
   bool alarmArmed    = true;
   unsigned long lastMotionTime = 0;
   unsigned long lastRFIDTime   = 0;
-  String inputPasscode = "";
+  String inputPasscode = "";  // Holds keypad-entered passcode
   
   // Allow only one keypad attempt per trial.
   bool keypadAttemptMade = false;
@@ -94,7 +95,9 @@ namespace AlarmSystem {
   void updateBeepSequence();
   float readTemperature();
   void processThermistor();
-  
+  void sendStatus();
+  void processSerialCommands();
+
   // ------------------------
   // Setup function
   // ------------------------
@@ -131,7 +134,24 @@ namespace AlarmSystem {
       processThermistor();
     }
     
+    // Process incoming serial commands from Node.js
+    processSerialCommands();
+    
+    // Send status over Serial as JSON
+    sendStatus();
+    
     delay(20);
+  }
+  
+  // ------------------------
+  // Send status over Serial as JSON
+  // ------------------------
+  void sendStatus() {
+    Serial.print("{");
+    Serial.print("\"armed\":"); Serial.print(alarmArmed ? "true" : "false"); Serial.print(",");
+    Serial.print("\"active\":"); Serial.print(alarmActive ? "true" : "false"); Serial.print(",");
+    Serial.print("\"temp\":"); Serial.print(readTemperature());
+    Serial.println("}");
   }
   
   // ------------------------
@@ -174,18 +194,16 @@ namespace AlarmSystem {
     
     if (valid) {
       Serial.println(F("Valid card detected."));
-      keypadAttemptMade = false; // Reset keypad attempts on valid RFID scan
-      // Disable alarm for 5 seconds.
+      keypadAttemptMade = false;
       alarmSilenced = true;
       alarmSilenceUntil = millis() + 5000;
-      alarmActive = false; // Turn off any active alarm.
+      alarmActive = false;
+      alarmArmed = false;
       digitalWrite(LED_PIN, LOW);
       scheduleBeep(BEEP_SUCCESS);
       return true;
-    } else {
-      Serial.println(F("Invalid card detected."));
-      return false;
     }
+    return false;
   }
   
   // ------------------------
@@ -204,7 +222,7 @@ namespace AlarmSystem {
         if (!keypadAttemptMade) {
           Serial.println(F("Enter pressed"));
           if (inputPasscode == NEW_PASSCODE) {
-            alarmArmed = !alarmArmed; // Toggle armed state
+            alarmArmed = !alarmArmed;
             if (alarmArmed) {
               Serial.println(F("Alarm armed."));
               scheduleBeep(BEEP_ARM);
@@ -219,7 +237,7 @@ namespace AlarmSystem {
           } else {
             Serial.println(F("Invalid passcode."));
             keypadAttemptMade = true;
-            alarmActive = true; // Activate continuous siren tone
+            alarmActive = true;
           }
           inputPasscode = "";
         } else {
@@ -241,7 +259,6 @@ namespace AlarmSystem {
     if (!alarmArmed)
       return;
     
-    // Clear RFID silence if time expired.
     if (alarmSilenced && millis() >= alarmSilenceUntil) {
       alarmSilenced = false;
     }
@@ -249,23 +266,20 @@ namespace AlarmSystem {
     long distance = readUltrasonicDistance();
     if (distance > 0 && distance < DISTANCE_THRESHOLD) {
       Serial.println(F("Motion detected."));
-      // Only activate alarm if not silenced.
       if (!alarmSilenced) {
         alarmActive = true;
         digitalWrite(LED_PIN, HIGH);
       }
       lastMotionTime = millis();
     }
-  
   }
   
   // ------------------------
   // Process RFID input to silence alarm if active
   // ------------------------
   void processRFID() {
-    if (alarmActive && (millis() - lastRFIDTime > 1000)) {
+    if (alarmArmed && (millis() - lastRFIDTime > 1000)) {
       if (checkRFIDCard()) {
-        // The checkRFIDCard() function already sets alarmSilenced for 5 seconds.
         lastRFIDTime = millis();
       }
     }
@@ -285,6 +299,30 @@ namespace AlarmSystem {
       tone(BUZZER_PIN, frequency);
     } else {
       noTone(BUZZER_PIN);
+    }
+  }
+  
+  // ------------------------
+  // Process serial commands received from Node.js
+  // ------------------------
+  void processSerialCommands() {
+    if (Serial.available() > 0) {
+      String cmd = Serial.readStringUntil('\n');
+      cmd.trim();
+      if (cmd == "T") {
+        alarmArmed = !alarmArmed;
+        Serial.print("Toggled alarm. Now armed: ");
+        Serial.println(alarmArmed ? "true" : "false");
+      } else if (cmd == "A") {
+        alarmArmed = true;
+        Serial.println("Alarm armed via command.");
+      } else if (cmd == "D") {
+        alarmArmed = false;
+        Serial.println("Alarm disarmed via command.");
+      } else {
+        Serial.print("Unknown command: ");
+        Serial.println(cmd);
+      }
     }
   }
   
@@ -336,7 +374,7 @@ namespace AlarmSystem {
           }
         }
         break;
-        
+      
       case BEEP_DISARM:
         if (beepSequenceStep == 0) {
           tone(BUZZER_PIN, 1000);
@@ -370,7 +408,7 @@ namespace AlarmSystem {
           }
         }
         break;
-        
+      
       case BEEP_SUCCESS:
         if (beepSequenceStep == 0) {
           tone(BUZZER_PIN, 1200);
@@ -380,7 +418,7 @@ namespace AlarmSystem {
           }
         }
         break;
-        
+      
       case BEEP_WARN:
         if (beepSequenceStep == 0) {
           tone(BUZZER_PIN, 400);
@@ -402,7 +440,7 @@ namespace AlarmSystem {
           }
         }
         break;
-        
+      
       default:
         break;
     }
@@ -434,9 +472,6 @@ namespace AlarmSystem {
   // ------------------------
   void processThermistor() {
     float temperature = readTemperature();
-    Serial.print(F("Temperature: "));
-    Serial.print(temperature);
-    Serial.println(F(" °C"));
     
     if (temperature > TEMP_THRESHOLD) {
       Serial.println(F("Temperature threshold exceeded!"));
@@ -455,9 +490,4 @@ void setup() {
 
 void loop() {
   AlarmSystem::loop();
-  static unsigned long lastTempTime = 0;
-  if (millis() - lastTempTime > 1000) {
-    lastTempTime = millis();
-    AlarmSystem::processThermistor();
-  }
 }
