@@ -3,6 +3,7 @@
 #include <Keypad.h>
 #include <Arduino.h>
 #include <math.h>
+#include <ArduinoJson.h>
 
 namespace AlarmSystem {
 
@@ -24,11 +25,11 @@ namespace AlarmSystem {
 
   MFRC522 mfrc522(SS_PIN, RST_PIN);
   
-  // Ultrasonic sensor – helper constants
+  // Ultrasonic sensor – helper constant
   constexpr float DISTANCE_THRESHOLD = 50.0f;  // in cm
   
   // Temperature threshold (°C)
-  constexpr float TEMP_THRESHOLD = 40.0f;
+  constexpr float TEMP_THRESHOLD = 30.0f;
   
   // ------------------------
   // Keypad configuration for a 4x4 keypad
@@ -61,12 +62,11 @@ namespace AlarmSystem {
   unsigned long lastMotionTime = 0;
   unsigned long lastRFIDTime   = 0;
   String inputPasscode = "";  // Holds keypad-entered passcode
+  bool keypadAttemptMade = false; // Only one keypad attempt per trial.
+  unsigned long alarmSilenceUntil = 0;  // RFID silences alarm for 5000ms
   
-  // Allow only one keypad attempt per trial.
-  bool keypadAttemptMade = false;
-  
-  // When RFID silences the alarm, it does so for 5000ms.
-  unsigned long alarmSilenceUntil = 0;
+  // Cached temperature reading updated every second.
+  float currentTemperature = 0.0f;
   
   // ------------------------
   // Buzzer control using non-blocking beep sequences:
@@ -81,7 +81,44 @@ namespace AlarmSystem {
   BeepSequenceType currentBeepSequence = NO_BEEP;
   unsigned long beepSequenceStart = 0;
   int beepSequenceStep = 0; // Tracks progress in the beep sequence
-  
+
+  // Structure to hold each beep step
+  struct BeepStep {
+    int frequency;           // 0 indicates silence (noTone)
+    unsigned long duration;  // Duration in milliseconds
+  };
+
+  // Define beep sequences
+  const BeepStep beepArmSteps[] = {
+    {600,  100},
+    {0,    100},
+    {800,  100},
+    {0,    100},
+    {1000, 100}
+  };
+  const int beepArmCount = sizeof(beepArmSteps) / sizeof(BeepStep);
+
+  const BeepStep beepDisarmSteps[] = {
+    {1000, 100},
+    {0,    100},
+    {800,  100},
+    {0,    100},
+    {600,  100}
+  };
+  const int beepDisarmCount = sizeof(beepDisarmSteps) / sizeof(BeepStep);
+
+  const BeepStep beepSuccessSteps[] = {
+    {1200, 150}
+  };
+  const int beepSuccessCount = sizeof(beepSuccessSteps) / sizeof(BeepStep);
+
+  const BeepStep beepWarnSteps[] = {
+    {400, 300},
+    {0,   100},
+    {400, 300}
+  };
+  const int beepWarnCount = sizeof(beepWarnSteps) / sizeof(BeepStep);
+
   // ------------------------
   // Function declarations
   // ------------------------
@@ -126,7 +163,7 @@ namespace AlarmSystem {
     processRFID();
     updateBuzzer();
     
-    // Process thermistor reading every 1 second
+    // Update thermistor reading every 1 second
     static unsigned long lastTempTime = 0;
     unsigned long currentMillis = millis();
     if (currentMillis - lastTempTime >= 1000) {
@@ -147,11 +184,12 @@ namespace AlarmSystem {
   // Send status over Serial as JSON
   // ------------------------
   void sendStatus() {
-    Serial.print("{");
-    Serial.print("\"armed\":"); Serial.print(alarmArmed ? "true" : "false"); Serial.print(",");
-    Serial.print("\"active\":"); Serial.print(alarmActive ? "true" : "false"); Serial.print(",");
-    Serial.print("\"temp\":"); Serial.print(readTemperature());
-    Serial.println("}");
+    DynamicJsonDocument doc(128);
+    doc["armed"] = alarmArmed;
+    doc["active"] = alarmActive;
+    doc["temp"] = currentTemperature;  // Use cached temperature
+    serializeJson(doc, Serial);
+    Serial.println();
   }
   
   // ------------------------
@@ -331,118 +369,72 @@ namespace AlarmSystem {
   // ------------------------
   void scheduleBeep(BeepSequenceType type) {
     currentBeepSequence = type;
-    beepSequenceStart = millis();
     beepSequenceStep = 0;
+    beepSequenceStart = millis();
+    
+    // Immediately start the first tone for the sequence.
+    switch (type) {
+      case BEEP_ARM:
+        tone(BUZZER_PIN, beepArmSteps[0].frequency);
+        break;
+      case BEEP_DISARM:
+        tone(BUZZER_PIN, beepDisarmSteps[0].frequency);
+        break;
+      case BEEP_SUCCESS:
+        tone(BUZZER_PIN, beepSuccessSteps[0].frequency);
+        break;
+      case BEEP_WARN:
+        tone(BUZZER_PIN, beepWarnSteps[0].frequency);
+        break;
+      default:
+        break;
+    }
   }
   
   // ------------------------
-  // Update beep sequence using state machine
+  // Update beep sequence using a generic state machine
   // ------------------------
   void updateBeepSequence() {
     unsigned long now = millis();
+    const BeepStep* steps = nullptr;
+    int stepCount = 0;
+    
     switch (currentBeepSequence) {
       case BEEP_ARM:
-        if (beepSequenceStep == 0) {
-          tone(BUZZER_PIN, 600);
-          if (now - beepSequenceStart >= 100) {
-            noTone(BUZZER_PIN);
-            beepSequenceStep = 1;
-            beepSequenceStart = now;
-          }
-        } else if (beepSequenceStep == 1) {
-          if (now - beepSequenceStart >= 100) {
-            beepSequenceStep = 2;
-            beepSequenceStart = now;
-          }
-        } else if (beepSequenceStep == 2) {
-          tone(BUZZER_PIN, 800);
-          if (now - beepSequenceStart >= 100) {
-            noTone(BUZZER_PIN);
-            beepSequenceStep = 3;
-            beepSequenceStart = now;
-          }
-        } else if (beepSequenceStep == 3) {
-          if (now - beepSequenceStart >= 100) {
-            beepSequenceStep = 4;
-            beepSequenceStart = now;
-          }
-        } else if (beepSequenceStep == 4) {
-          tone(BUZZER_PIN, 1000);
-          if (now - beepSequenceStart >= 100) {
-            noTone(BUZZER_PIN);
-            currentBeepSequence = NO_BEEP;
-          }
-        }
+        steps = beepArmSteps;
+        stepCount = beepArmCount;
         break;
-      
       case BEEP_DISARM:
-        if (beepSequenceStep == 0) {
-          tone(BUZZER_PIN, 1000);
-          if (now - beepSequenceStart >= 100) {
-            noTone(BUZZER_PIN);
-            beepSequenceStep = 1;
-            beepSequenceStart = now;
-          }
-        } else if (beepSequenceStep == 1) {
-          if (now - beepSequenceStart >= 100) {
-            beepSequenceStep = 2;
-            beepSequenceStart = now;
-          }
-        } else if (beepSequenceStep == 2) {
-          tone(BUZZER_PIN, 800);
-          if (now - beepSequenceStart >= 100) {
-            noTone(BUZZER_PIN);
-            beepSequenceStep = 3;
-            beepSequenceStart = now;
-          }
-        } else if (beepSequenceStep == 3) {
-          if (now - beepSequenceStart >= 100) {
-            beepSequenceStep = 4;
-            beepSequenceStart = now;
-          }
-        } else if (beepSequenceStep == 4) {
-          tone(BUZZER_PIN, 600);
-          if (now - beepSequenceStart >= 100) {
-            noTone(BUZZER_PIN);
-            currentBeepSequence = NO_BEEP;
-          }
-        }
+        steps = beepDisarmSteps;
+        stepCount = beepDisarmCount;
         break;
-      
       case BEEP_SUCCESS:
-        if (beepSequenceStep == 0) {
-          tone(BUZZER_PIN, 1200);
-          if (now - beepSequenceStart >= 150) {
-            noTone(BUZZER_PIN);
-            currentBeepSequence = NO_BEEP;
-          }
-        }
+        steps = beepSuccessSteps;
+        stepCount = beepSuccessCount;
         break;
-      
       case BEEP_WARN:
-        if (beepSequenceStep == 0) {
-          tone(BUZZER_PIN, 400);
-          if (now - beepSequenceStart >= 300) {
-            noTone(BUZZER_PIN);
-            beepSequenceStep = 1;
-            beepSequenceStart = now;
-          }
-        } else if (beepSequenceStep == 1) {
-          if (now - beepSequenceStart >= 100) {
-            beepSequenceStep = 2;
-            beepSequenceStart = now;
-          }
-        } else if (beepSequenceStep == 2) {
-          tone(BUZZER_PIN, 400);
-          if (now - beepSequenceStart >= 300) {
-            noTone(BUZZER_PIN);
-            currentBeepSequence = NO_BEEP;
-          }
-        }
+        steps = beepWarnSteps;
+        stepCount = beepWarnCount;
         break;
-      
       default:
-        break;
+        return;
+    }
+    
+    // Proceed to next step if the current step's duration has elapsed.
+    if (now - beepSequenceStart >= steps[beepSequenceStep].duration) {
+      beepSequenceStep++;
+      beepSequenceStart = now;
+      if (beepSequenceStep < stepCount) {
+        // If frequency is zero, remain silent.
+        if (steps[beepSequenceStep].frequency == 0) {
+          noTone(BUZZER_PIN);
+        } else {
+          tone(BUZZER_PIN, steps[beepSequenceStep].frequency);
+        }
+      } else {
+        noTone(BUZZER_PIN);
+        currentBeepSequence = NO_BEEP;
+      }
     }
   }
   
@@ -450,20 +442,21 @@ namespace AlarmSystem {
   // Read temperature from NTC thermistor (in °C)
   // ------------------------
   float readTemperature() {
+    // Precompute the voltage per ADC count.
+    constexpr float voltagePerCount = 5.0f / 1023.0f;
     int sensorValue = analogRead(THERMISTOR_PIN);
-    const float V_in = 5.0;
-    const float R_FIXED = 10000.0; // 10k resistor
-    float Vout = sensorValue * (V_in / 1023.0);
-    if (Vout <= 0.0) {
-      return -273.15; // Error indicator
+    float Vout = sensorValue * voltagePerCount;
+    if (Vout <= 0.0f) {
+      return -273.15f; // Error indicator
     }
-    float R_thermistor = R_FIXED * ((V_in / Vout) - 1.0);
+    const float R_FIXED = 10000.0f; // 10k resistor
+    float R_thermistor = R_FIXED * ((5.0f / Vout) - 1.0f);
     
-    const float T0 = 298.15;  // 25°C in Kelvin
-    const float R0 = 10000.0; // Resistance at 25°C
-    const float B = 3950.0;   // Beta coefficient
-    float temperatureK = 1.0 / ((1.0 / T0) + (1.0 / B) * log(R_thermistor / R0));
-    float temperatureC = temperatureK - 273.15;
+    const float T0 = 298.15f;  // 25°C in Kelvin
+    const float R0 = 10000.0f; // Resistance at 25°C
+    const float B = 3950.0f;   // Beta coefficient
+    float temperatureK = 1.0f / ((1.0f / T0) + (1.0f / B) * log(R_thermistor / R0));
+    float temperatureC = temperatureK - 273.15f;
     return temperatureC;
   }
   
@@ -471,9 +464,8 @@ namespace AlarmSystem {
   // Process thermistor reading and act if threshold exceeded
   // ------------------------
   void processThermistor() {
-    float temperature = readTemperature();
-    
-    if (temperature > TEMP_THRESHOLD) {
+    currentTemperature = readTemperature();
+    if (currentTemperature > TEMP_THRESHOLD) {
       Serial.println(F("Temperature threshold exceeded!"));
       alarmActive = true;
       digitalWrite(LED_PIN, HIGH);
