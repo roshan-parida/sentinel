@@ -3,71 +3,176 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Smart Home Security System</title>
+        <meta
+            name="description"
+            content="Sentinel - Smart Home Security System. Control and monitor your smart home with our secure system."
+        />
+        <title>Sentinel - Smart Home Security System</title>
+        <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+        <link
+            rel="stylesheet"
+            href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+        />
         <link rel="stylesheet" href="styles.css" />
     </head>
 
-    <body>
-        <div class="dashboard">
+    <body class="light-mode">
+        <div class="theme-toggle">
+            <button id="theme-switch" aria-label="Toggle theme">
+                <i class="fas fa-moon"></i>
+            </button>
+        </div>
+
+        <div class="container">
             <header>
-                <h1>Smart Home Security System</h1>
-                <div id="connectionStatus" class="connection-indicator"></div>
+                <div class="logo-container">
+                    <i class="fas fa-shield-alt" aria-hidden="true"></i>
+                    <h1>Sentinel</h1>
+                </div>
+                <p class="subtitle">Smart Home Security System</p>
+                <div class="connection-status-container">
+                    <div
+                        id="connection-status"
+                        class="status-disconnected"
+                        role="status"
+                    >
+                        <i class="fas fa-plug" aria-hidden="true"></i>
+                        <span>Disconnected</span>
+                    </div>
+                </div>
             </header>
 
             <main>
-                <section class="status-panel">
-                    <h2>System Status</h2>
-                    <div class="status-grid">
-                        <div class="status-item">
-                            <label>System State:</label>
-                            <span id="armedStatus">--</span>
+                <section class="dashboard-grid">
+                    <div class="card status-panel">
+                        <div class="card-header">
+                            <i class="fas fa-chart-line" aria-hidden="true"></i>
+                            <h2>System Status</h2>
                         </div>
-                        <div class="status-item">
-                            <label>Activity:</label>
-                            <span id="activeStatus">--</span>
+                        <div class="card-content">
+                            <div class="status-row">
+                                <div class="status-icon">
+                                    <i
+                                        class="fas fa-lock"
+                                        aria-hidden="true"
+                                    ></i>
+                                </div>
+                                <div class="status-info">
+                                    <span class="label">Armed Status</span>
+                                    <span id="system-status" class="value"
+                                        >Unknown</span
+                                    >
+                                </div>
+                                <div
+                                    id="status-armed"
+                                    class="status-indicator"
+                                ></div>
+                            </div>
+
+                            <div class="status-row">
+                                <div class="status-icon">
+                                    <i
+                                        class="fas fa-bell"
+                                        aria-hidden="true"
+                                    ></i>
+                                </div>
+                                <div class="status-info">
+                                    <span class="label">Alarm Status</span>
+                                    <span id="alarm-status" class="value"
+                                        >Unknown</span
+                                    >
+                                </div>
+                                <div
+                                    id="status-alarm"
+                                    class="status-indicator"
+                                ></div>
+                            </div>
+
+                            <div class="status-row">
+                                <div class="status-icon">
+                                    <i
+                                        class="fas fa-thermometer-half"
+                                        aria-hidden="true"
+                                    ></i>
+                                </div>
+                                <div class="status-info">
+                                    <span class="label">Temperature</span>
+                                    <span id="temperature" class="value"
+                                        >--°C</span
+                                    >
+                                </div>
+                                <div
+                                    id="temp-indicator"
+                                    class="status-indicator"
+                                ></div>
+                            </div>
                         </div>
-                        <div class="status-item">
-                            <label>Temperature:</label>
-                            <span id="tempStatus">--</span>
+                    </div>
+
+                    <div class="card control-panel">
+                        <div class="card-header">
+                            <i class="fas fa-sliders-h" aria-hidden="true"></i>
+                            <h2>System Controls</h2>
+                        </div>
+                        <div class="card-content">
+                            <div class="button-grid">
+                                <button id="btn-arm" class="btn btn-primary">
+                                    <i
+                                        class="fas fa-lock"
+                                        aria-hidden="true"
+                                    ></i>
+                                    <span>Arm System</span>
+                                </button>
+                                <button
+                                    id="btn-disarm"
+                                    class="btn btn-secondary"
+                                >
+                                    <i
+                                        class="fas fa-lock-open"
+                                        aria-hidden="true"
+                                    ></i>
+                                    <span>Disarm System</span>
+                                </button>
+                                <button
+                                    id="btn-toggle"
+                                    class="btn btn-tertiary"
+                                >
+                                    <i
+                                        class="fas fa-sync-alt"
+                                        aria-hidden="true"
+                                    ></i>
+                                    <span>Toggle System</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
-                    <div id="lastUpdate" class="last-update">
-                        Last Update: --
-                    </div>
-                </section>
 
-                <section class="controls-panel">
-                    <h2>System Controls</h2>
-                    <div class="control-group">
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="armToggle" />
-                            <span class="slider"></span>
-                            <span class="label">Arm System</span>
-                        </label>
+                    <div class="card activity-panel">
+                        <div class="card-header">
+                            <i class="fas fa-history" aria-hidden="true"></i>
+                            <h2>Recent Activity</h2>
+                        </div>
+                        <div class="card-content">
+                            <div
+                                id="activity-log"
+                                class="activity-log"
+                                aria-live="polite"
+                            ></div>
+                        </div>
                     </div>
-
-                    <form id="commandForm" class="command-form">
-                        <input
-                            type="text"
-                            id="commandInput"
-                            placeholder="Enter command..."
-                        />
-                        <button type="submit">Send Command</button>
-                    </form>
-                </section>
-
-                <section class="notifications-panel">
-                    <div class="notifications-header">
-                        <h2>Notifications</h2>
-                        <button id="clearNotifications" class="clear-btn">
-                            Clear All
-                        </button>
-                    </div>
-                    <div id="notifications" class="notifications-list"></div>
                 </section>
             </main>
+
+            <footer>
+                <p>&copy; 2025 Sentinel Security System</p>
+            </footer>
         </div>
 
+        <div
+            id="toast-container"
+            class="toast-container"
+            aria-live="assertive"
+        ></div>
         <script src="/socket.io/socket.io.js"></script>
         <script src="client.js"></script>
     </body>

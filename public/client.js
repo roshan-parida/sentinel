@@ -1,165 +1,208 @@
-class AlarmDashboard {
-    constructor() {
-        this.socket = io();
-        this.initializeSocket();
-        this.initializeEventListeners();
-        this.lastUpdate = null;
-        this.notifications = [];
-        this.lastAlertNotificationTime = 0;
+/* Theme management */
+function initTheme() {
+    const theme = localStorage.getItem("theme") || "light";
+    document.body.setAttribute("data-theme", theme);
+    updateThemeIcon(theme);
+}
 
-        // Request notification permission on load
-        if ("Notification" in window) {
-            Notification.requestPermission().then((permission) => {
-                console.log("Notification permission:", permission);
-            });
-        }
+function toggleTheme() {
+    const currentTheme = document.body.getAttribute("data-theme");
+    const newTheme = currentTheme === "light" ? "dark" : "light";
+    document.body.setAttribute("data-theme", newTheme);
+    localStorage.setItem("theme", newTheme);
+    updateThemeIcon(newTheme);
+}
+
+function updateThemeIcon(theme) {
+    const icon = document.querySelector("#theme-switch i");
+    icon.className = theme === "light" ? "fas fa-moon" : "fas fa-sun";
+}
+
+/* Socket.IO connection */
+const socket = io();
+let lastLoggedStatus = null; // Store last status logged in Recent Activity
+
+socket.on("connect", () => {
+    console.log("Connected to server");
+    updateConnectionStatus(true);
+    showToast("success", "Connected to server");
+});
+
+socket.on("disconnect", () => {
+    console.log("Disconnected from server");
+    updateConnectionStatus(false);
+    showToast("error", "Disconnected from server");
+});
+
+socket.on("status", (status) => {
+    updateUI(status);
+    if (shouldLogActivity(status)) {
+        logActivity(status);
+    }
+    lastLoggedStatus = status;
+});
+
+/* Helper: Compare two status objects (with a tolerance for temperature) */
+function isStatusEqual(s1, s2) {
+    if (!s1 || !s2) return false;
+    const tempTolerance = 0.1;
+    return (
+        s1.armed === s2.armed &&
+        s1.active === s2.active &&
+        Math.abs(s1.temp - s2.temp) < tempTolerance
+    );
+}
+
+function shouldLogActivity(newStatus) {
+    return !isStatusEqual(newStatus, lastLoggedStatus);
+}
+
+/* UI Updates */
+function updateConnectionStatus(connected) {
+    const statusElement = document.getElementById("connection-status");
+    const statusText = statusElement.querySelector("span");
+    statusElement.className = connected
+        ? "status-connected"
+        : "status-disconnected";
+    statusText.textContent = connected ? "Connected" : "Disconnected";
+}
+
+function updateUI(status) {
+    // Update armed status
+    const systemStatus = document.getElementById("system-status");
+    const newArmedStatus = status.armed ? "Armed" : "Disarmed";
+    if (systemStatus.textContent !== newArmedStatus) {
+        systemStatus.style.animation = "fadeInOut 0.5s";
+        setTimeout(() => {
+            systemStatus.textContent = newArmedStatus;
+            systemStatus.style.animation = "";
+        }, 250);
     }
 
-    initializeSocket() {
-        // Handle status updates from the server
-        this.socket.on("status", (status) => {
-            this.updateStatus(status);
-            this.checkAlerts(status);
-        });
-
-        // Handle error messages from the server
-        this.socket.on("error", (error) => {
-            this.showNotification("error", error.message);
-        });
-
-        // Handle connection events
-        this.socket.on("connect", () => {
-            this.showNotification("success", "Connected to server");
-            document.getElementById("connectionStatus").className = "connected";
-        });
-
-        this.socket.on("disconnect", () => {
-            this.showNotification("error", "Disconnected from server");
-            document.getElementById("connectionStatus").className =
-                "disconnected";
-        });
+    // Update alarm status
+    const alarmStatus = document.getElementById("alarm-status");
+    const newAlarmStatus = status.active ? "ACTIVE" : "Inactive";
+    if (alarmStatus.textContent !== newAlarmStatus) {
+        alarmStatus.style.animation = "fadeInOut 0.5s";
+        setTimeout(() => {
+            alarmStatus.textContent = newAlarmStatus;
+            alarmStatus.style.animation = "";
+        }, 250);
     }
 
-    initializeEventListeners() {
-        // Command submission form
-        document
-            .getElementById("commandForm")
-            .addEventListener("submit", (e) => {
-                e.preventDefault();
-                const input = document.getElementById("commandInput");
-                const command = input.value.trim();
-                if (command) {
-                    this.sendCommand(command);
-                    input.value = "";
-                }
-            });
-
-        // Arm/disarm toggle; send "A" for arm, "D" for disarm
-        document.getElementById("armToggle").addEventListener("change", (e) => {
-            this.sendCommand(e.target.checked ? "A" : "D");
-        });
-
-        // Clear notifications button
-        document
-            .getElementById("clearNotifications")
-            .addEventListener("click", () => {
-                this.clearNotifications();
-            });
+    // Update temperature with smooth transition
+    const tempElement = document.getElementById("temperature");
+    const newTemp = `${status.temp.toFixed(1)}°C`;
+    if (tempElement.textContent !== newTemp) {
+        tempElement.style.animation = "fadeInOut 0.5s";
+        setTimeout(() => {
+            tempElement.textContent = newTemp;
+            tempElement.style.animation = "";
+        }, 250);
     }
 
-    updateStatus(status) {
-        const statusElements = {
-            armed: document.getElementById("armedStatus"),
-            active: document.getElementById("activeStatus"),
-            temp: document.getElementById("tempStatus"),
-            lastUpdate: document.getElementById("lastUpdate"),
-        };
+    // Update status indicators
+    document.getElementById("status-armed").className = `status-indicator ${
+        status.armed ? "armed" : "disarmed"
+    }`;
+    document.getElementById("status-alarm").className = `status-indicator ${
+        status.active ? "alarm-active" : "alarm-inactive"
+    }`;
 
-        statusElements.armed.textContent = status.armed ? "ARMED" : "DISARMED";
-        statusElements.armed.className = status.armed
-            ? "status-armed"
-            : "status-disarmed";
-
-        statusElements.active.textContent = status.active
-            ? "ACTIVE"
-            : "INACTIVE";
-        statusElements.active.className = status.active
-            ? "status-active"
-            : "status-inactive";
-
-        statusElements.temp.textContent = `${status.temp.toFixed(1)}°C`;
-
-        this.lastUpdate = new Date();
-        statusElements.lastUpdate.textContent = `Last Update: ${this.lastUpdate.toLocaleTimeString()}`;
-
-        const armToggle = document.getElementById("armToggle");
-        armToggle.checked = status.armed;
-    }
-
-    checkAlerts(status) {
-        // Alert if temperature exceeds 30°C
-        if (status.temp > 30) {
-            this.showNotification("warning", "High temperature detected!");
-        }
-
-        // Alert if the system is active while armed (indicating alarm triggered)
-        if (status.active && status.armed) {
-            this.showNotification("alert", "ALARM TRIGGERED!");
-            // Send a push notification if 30 seconds have passed since the last alert
-            const now = Date.now();
-            if (now - this.lastAlertNotificationTime > 30000) {
-                this.lastAlertNotificationTime = now;
-                if (Notification.permission === "granted") {
-                    new Notification("Alarm Triggered!", {
-                        body: "Your Smart Home Security System has been triggered!",
-                        // Optionally add an icon:
-                        // icon: 'path/to/icon.png'
-                    });
-                }
-            }
-        }
-    }
-
-    showNotification(type, message) {
-        const notification = {
-            id: Date.now(),
-            type,
-            message,
-            timestamp: new Date().toLocaleTimeString(),
-        };
-
-        this.notifications.unshift(notification);
-        this.updateNotificationsList();
-    }
-
-    updateNotificationsList() {
-        const container = document.getElementById("notifications");
-        container.innerHTML = this.notifications
-            .slice(0, 10)
-            .map(
-                (notif) => `
-        <div class="notification ${notif.type}">
-          <span class="timestamp">${notif.timestamp}</span>
-          <span class="message">${notif.message}</span>
-        </div>
-      `
-            )
-            .join("");
-    }
-
-    clearNotifications() {
-        this.notifications = [];
-        this.updateNotificationsList();
-    }
-
-    sendCommand(command) {
-        // Emit the command to the server; your Node.js server appends newline if needed.
-        this.socket.emit("command", command);
-        this.showNotification("info", `Command sent: ${command}`);
+    // Update temperature indicator based on value
+    const tempIndicator = document.getElementById("temp-indicator");
+    if (status.temp > 30) {
+        tempIndicator.className = "status-indicator high-temp";
+    } else if (status.temp > 25) {
+        tempIndicator.className = "status-indicator medium-temp";
+    } else {
+        tempIndicator.className = "status-indicator normal-temp";
     }
 }
 
-// Initialize dashboard when DOM is fully loaded
+/* Activity Log Management */
+const ACTIVITY_LOG_SIZE = 10;
+function logActivity(status) {
+    const activityLog = document.getElementById("activity-log");
+    const timestamp = new Date().toLocaleTimeString();
+
+    const activityItem = document.createElement("div");
+    activityItem.className = "activity-item";
+
+    let icon, message;
+    if (status.active) {
+        icon = "fa-exclamation-triangle";
+        message = "Alarm triggered!";
+    } else if (status.armed) {
+        icon = "fa-lock";
+        message = "System armed";
+    } else {
+        icon = "fa-lock-open";
+        message = "System disarmed";
+    }
+
+    activityItem.innerHTML = `
+        <div class="activity-icon">
+            <i class="fas ${icon}" aria-hidden="true"></i>
+        </div>
+        <div class="activity-content">
+            <div class="activity-message">${message}</div>
+            <div class="activity-time">${timestamp}</div>
+        </div>
+    `;
+
+    activityLog.insertBefore(activityItem, activityLog.firstChild);
+
+    // Limit log entries to ACTIVITY_LOG_SIZE
+    while (activityLog.children.length > ACTIVITY_LOG_SIZE) {
+        activityLog.removeChild(activityLog.lastChild);
+    }
+}
+
+/* Toast Notifications */
+function showToast(type, message) {
+    const toast = document.createElement("div");
+    toast.className = `toast toast-${type}`;
+    const icon =
+        type === "success" ? "fa-check-circle" : "fa-exclamation-circle";
+    toast.innerHTML = `
+        <i class="fas ${icon}" aria-hidden="true"></i>
+        <span>${message}</span>
+    `;
+
+    const container = document.getElementById("toast-container");
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        toast.style.animation = "slideOut 0.3s ease-out";
+        setTimeout(() => container.removeChild(toast), 300);
+    }, 3000);
+}
+
+/* Command Functions */
+function sendCommand(cmd) {
+    if (socket.connected) {
+        socket.emit("command", cmd);
+        showToast("success", `Command sent: ${cmd}`);
+    } else {
+        showToast("error", "Cannot send command: Not connected");
+    }
+}
+
+/* Initialize when the DOM is ready */
 document.addEventListener("DOMContentLoaded", () => {
-    window.dashboard = new AlarmDashboard();
+    initTheme();
+
+    document
+        .getElementById("theme-switch")
+        .addEventListener("click", toggleTheme);
+    document
+        .getElementById("btn-arm")
+        .addEventListener("click", () => sendCommand("A"));
+    document
+        .getElementById("btn-disarm")
+        .addEventListener("click", () => sendCommand("D"));
+    document
+        .getElementById("btn-toggle")
+        .addEventListener("click", () => sendCommand("T"));
 });
