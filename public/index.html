@@ -44,11 +44,11 @@
 
             <main>
                 <section class="dashboard-grid">
-                    <div class="card status-panel">
-                        <div class="card-header">
+                    <article class="card status-panel">
+                        <header class="card-header">
                             <i class="fas fa-chart-line" aria-hidden="true"></i>
                             <h2>System Status</h2>
-                        </div>
+                        </header>
                         <div class="card-content">
                             <div class="status-row">
                                 <div class="status-icon">
@@ -68,7 +68,6 @@
                                     class="status-indicator"
                                 ></div>
                             </div>
-
                             <div class="status-row">
                                 <div class="status-icon">
                                     <i
@@ -87,7 +86,6 @@
                                     class="status-indicator"
                                 ></div>
                             </div>
-
                             <div class="status-row">
                                 <div class="status-icon">
                                     <i
@@ -107,13 +105,13 @@
                                 ></div>
                             </div>
                         </div>
-                    </div>
+                    </article>
 
-                    <div class="card control-panel">
-                        <div class="card-header">
+                    <article class="card control-panel">
+                        <header class="card-header">
                             <i class="fas fa-sliders-h" aria-hidden="true"></i>
                             <h2>System Controls</h2>
-                        </div>
+                        </header>
                         <div class="card-content">
                             <div class="button-grid">
                                 <button id="btn-arm" class="btn btn-primary">
@@ -145,13 +143,13 @@
                                 </button>
                             </div>
                         </div>
-                    </div>
+                    </article>
 
-                    <div class="card activity-panel">
-                        <div class="card-header">
+                    <article class="card activity-panel">
+                        <header class="card-header">
                             <i class="fas fa-history" aria-hidden="true"></i>
                             <h2>Recent Activity</h2>
-                        </div>
+                        </header>
                         <div class="card-content">
                             <div
                                 id="activity-log"
@@ -159,7 +157,7 @@
                                 aria-live="polite"
                             ></div>
                         </div>
-                    </div>
+                    </article>
                 </section>
             </main>
 
@@ -173,6 +171,7 @@
             class="toast-container"
             aria-live="assertive"
         ></div>
+
         <script src="/socket.io/socket.io.js"></script>
         <script src="client.js"></script>
     </body>

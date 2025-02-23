@@ -1,26 +1,24 @@
-/* Theme management */
-function initTheme() {
+/* Theme Management */
+const initTheme = () => {
     const theme = localStorage.getItem("theme") || "light";
-    document.body.setAttribute("data-theme", theme);
+    document.body.dataset.theme = theme;
     updateThemeIcon(theme);
-}
+};
 
-function toggleTheme() {
-    const currentTheme = document.body.getAttribute("data-theme");
-    const newTheme = currentTheme === "light" ? "dark" : "light";
-    document.body.setAttribute("data-theme", newTheme);
+const toggleTheme = () => {
+    const newTheme = document.body.dataset.theme === "light" ? "dark" : "light";
+    document.body.dataset.theme = newTheme;
     localStorage.setItem("theme", newTheme);
     updateThemeIcon(newTheme);
-}
+};
 
-function updateThemeIcon(theme) {
-    const icon = document.querySelector("#theme-switch i");
-    icon.className = theme === "light" ? "fas fa-moon" : "fas fa-sun";
-}
+const updateThemeIcon = (theme) =>
+    (document.querySelector("#theme-switch i").className =
+        theme === "light" ? "fas fa-moon" : "fas fa-sun");
 
-/* Socket.IO connection */
+/* Socket.IO Connection */
 const socket = io();
-let lastLoggedStatus = null; // Store last status logged in Recent Activity
+let lastLoggedStatus = null;
 
 socket.on("connect", () => {
     console.log("Connected to server");
@@ -36,72 +34,53 @@ socket.on("disconnect", () => {
 
 socket.on("status", (status) => {
     updateUI(status);
-    if (shouldLogActivity(status)) {
+    if (!isStatusEqual(status, lastLoggedStatus)) {
         logActivity(status);
+        lastLoggedStatus = status;
     }
-    lastLoggedStatus = status;
 });
 
-/* Helper: Compare two status objects (with a tolerance for temperature) */
-function isStatusEqual(s1, s2) {
-    if (!s1 || !s2) return false;
-    const tempTolerance = 0.1;
-    return (
-        s1.armed === s2.armed &&
-        s1.active === s2.active &&
-        Math.abs(s1.temp - s2.temp) < tempTolerance
-    );
-}
+/* Helpers */
+const isStatusEqual = (s1, s2) =>
+    s1 &&
+    s2 &&
+    s1.armed === s2.armed &&
+    s1.active === s2.active &&
+    Math.abs(s1.temp - s2.temp) < 0.1;
 
-function shouldLogActivity(newStatus) {
-    return !isStatusEqual(newStatus, lastLoggedStatus);
-}
+const animateChange = (el, newText) => {
+    if (el.textContent !== newText) {
+        el.style.animation = "fadeInOut 0.5s";
+        setTimeout(() => {
+            el.textContent = newText;
+            el.style.animation = "";
+        }, 250);
+    }
+};
 
 /* UI Updates */
-function updateConnectionStatus(connected) {
-    const statusElement = document.getElementById("connection-status");
-    const statusText = statusElement.querySelector("span");
-    statusElement.className = connected
-        ? "status-connected"
-        : "status-disconnected";
-    statusText.textContent = connected ? "Connected" : "Disconnected";
-}
+const updateConnectionStatus = (connected) => {
+    const statusEl = document.getElementById("connection-status");
+    statusEl.className = connected ? "status-connected" : "status-disconnected";
+    statusEl.querySelector("span").textContent = connected
+        ? "Connected"
+        : "Disconnected";
+};
 
-function updateUI(status) {
-    // Update armed status
-    const systemStatus = document.getElementById("system-status");
-    const newArmedStatus = status.armed ? "Armed" : "Disarmed";
-    if (systemStatus.textContent !== newArmedStatus) {
-        systemStatus.style.animation = "fadeInOut 0.5s";
-        setTimeout(() => {
-            systemStatus.textContent = newArmedStatus;
-            systemStatus.style.animation = "";
-        }, 250);
-    }
+const updateUI = (status) => {
+    animateChange(
+        document.getElementById("system-status"),
+        status.armed ? "Armed" : "Disarmed"
+    );
+    animateChange(
+        document.getElementById("alarm-status"),
+        status.active ? "ACTIVE" : "Inactive"
+    );
+    animateChange(
+        document.getElementById("temperature"),
+        `${status.temp.toFixed(1)}°C`
+    );
 
-    // Update alarm status
-    const alarmStatus = document.getElementById("alarm-status");
-    const newAlarmStatus = status.active ? "ACTIVE" : "Inactive";
-    if (alarmStatus.textContent !== newAlarmStatus) {
-        alarmStatus.style.animation = "fadeInOut 0.5s";
-        setTimeout(() => {
-            alarmStatus.textContent = newAlarmStatus;
-            alarmStatus.style.animation = "";
-        }, 250);
-    }
-
-    // Update temperature with smooth transition
-    const tempElement = document.getElementById("temperature");
-    const newTemp = `${status.temp.toFixed(1)}°C`;
-    if (tempElement.textContent !== newTemp) {
-        tempElement.style.animation = "fadeInOut 0.5s";
-        setTimeout(() => {
-            tempElement.textContent = newTemp;
-            tempElement.style.animation = "";
-        }, 250);
-    }
-
-    // Update status indicators
     document.getElementById("status-armed").className = `status-indicator ${
         status.armed ? "armed" : "disarmed"
     }`;
@@ -109,90 +88,70 @@ function updateUI(status) {
         status.active ? "alarm-active" : "alarm-inactive"
     }`;
 
-    // Update temperature indicator based on value
     const tempIndicator = document.getElementById("temp-indicator");
-    if (status.temp > 30) {
-        tempIndicator.className = "status-indicator high-temp";
-    } else if (status.temp > 25) {
-        tempIndicator.className = "status-indicator medium-temp";
-    } else {
-        tempIndicator.className = "status-indicator normal-temp";
-    }
-}
+    tempIndicator.className =
+        "status-indicator " +
+        (status.temp > 30
+            ? "high-temp"
+            : status.temp > 25
+            ? "medium-temp"
+            : "normal-temp");
+};
 
-/* Activity Log Management */
+/* Activity Log */
 const ACTIVITY_LOG_SIZE = 10;
-function logActivity(status) {
+const logActivity = (status) => {
     const activityLog = document.getElementById("activity-log");
     const timestamp = new Date().toLocaleTimeString();
+    const { icon, message } = status.active
+        ? { icon: "fa-exclamation-triangle", message: "Alarm triggered!" }
+        : status.armed
+        ? { icon: "fa-lock", message: "System armed" }
+        : { icon: "fa-lock-open", message: "System disarmed" };
 
     const activityItem = document.createElement("div");
     activityItem.className = "activity-item";
-
-    let icon, message;
-    if (status.active) {
-        icon = "fa-exclamation-triangle";
-        message = "Alarm triggered!";
-    } else if (status.armed) {
-        icon = "fa-lock";
-        message = "System armed";
-    } else {
-        icon = "fa-lock-open";
-        message = "System disarmed";
-    }
-
     activityItem.innerHTML = `
-        <div class="activity-icon">
-            <i class="fas ${icon}" aria-hidden="true"></i>
-        </div>
-        <div class="activity-content">
-            <div class="activity-message">${message}</div>
-            <div class="activity-time">${timestamp}</div>
-        </div>
+      <div class="activity-icon"><i class="fas ${icon}" aria-hidden="true"></i></div>
+      <div class="activity-content">
+        <div class="activity-message">${message}</div>
+        <div class="activity-time">${timestamp}</div>
+      </div>
     `;
-
     activityLog.insertBefore(activityItem, activityLog.firstChild);
-
-    // Limit log entries to ACTIVITY_LOG_SIZE
     while (activityLog.children.length > ACTIVITY_LOG_SIZE) {
         activityLog.removeChild(activityLog.lastChild);
     }
-}
+};
 
 /* Toast Notifications */
-function showToast(type, message) {
+const showToast = (type, message) => {
     const toast = document.createElement("div");
     toast.className = `toast toast-${type}`;
     const icon =
         type === "success" ? "fa-check-circle" : "fa-exclamation-circle";
-    toast.innerHTML = `
-        <i class="fas ${icon}" aria-hidden="true"></i>
-        <span>${message}</span>
-    `;
-
+    toast.innerHTML = `<i class="fas ${icon}" aria-hidden="true"></i><span>${message}</span>`;
     const container = document.getElementById("toast-container");
     container.appendChild(toast);
-
     setTimeout(() => {
         toast.style.animation = "slideOut 0.3s ease-out";
         setTimeout(() => container.removeChild(toast), 300);
     }, 3000);
-}
+};
 
 /* Command Functions */
-function sendCommand(cmd) {
+const sendCommand = (cmd) => {
     if (socket.connected) {
         socket.emit("command", cmd);
         showToast("success", `Command sent: ${cmd}`);
     } else {
         showToast("error", "Cannot send command: Not connected");
     }
-}
+};
 
-/* Initialize when the DOM is ready */
+/* DOM Initialization */
 document.addEventListener("DOMContentLoaded", () => {
     initTheme();
-
     document
         .getElementById("theme-switch")
         .addEventListener("click", toggleTheme);
