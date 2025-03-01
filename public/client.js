@@ -1,167 +1,239 @@
+/* Utility Functions */
+const $ = document.querySelector.bind(document);
+const $$ = document.querySelectorAll.bind(document);
+
 /* Theme Management */
-const initTheme = () => {
-    const theme = localStorage.getItem("theme") || "light";
-    document.body.dataset.theme = theme;
-    updateThemeIcon(theme);
+const ThemeManager = {
+    init() {
+        const theme = localStorage.getItem("theme") || "light";
+        document.body.dataset.theme = theme;
+        this.updateIcon(theme);
+        $("#theme-switch").addEventListener("click", this.toggle.bind(this));
+    },
+
+    toggle() {
+        const newTheme =
+            document.body.dataset.theme === "light" ? "dark" : "light";
+        document.body.dataset.theme = newTheme;
+        localStorage.setItem("theme", newTheme);
+        this.updateIcon(newTheme);
+    },
+
+    updateIcon(theme) {
+        $("#theme-switch i").className =
+            theme === "light" ? "fas fa-moon" : "fas fa-sun";
+    },
 };
 
-const toggleTheme = () => {
-    const newTheme = document.body.dataset.theme === "light" ? "dark" : "light";
-    document.body.dataset.theme = newTheme;
-    localStorage.setItem("theme", newTheme);
-    updateThemeIcon(newTheme);
-};
+/* UI Manager */
+const UIManager = {
+    elements: {
+        connectionStatus: $("#connection-status"),
+        systemStatus: $("#system-status"),
+        alarmStatus: $("#alarm-status"),
+        temperature: $("#temperature"),
+        statusArmed: $("#status-armed"),
+        statusAlarm: $("#status-alarm"),
+        tempIndicator: $("#temp-indicator"),
+        activityLog: $("#activity-log"),
+    },
 
-const updateThemeIcon = (theme) =>
-    (document.querySelector("#theme-switch i").className =
-        theme === "light" ? "fas fa-moon" : "fas fa-sun");
+    init() {
+        this.initButtonHandlers();
+    },
 
-/* Socket.IO Connection */
-const socket = io();
-let lastLoggedStatus = null;
+    initButtonHandlers() {
+        $("#btn-arm").addEventListener("click", () =>
+            SocketManager.sendCommand("A")
+        );
+        $("#btn-disarm").addEventListener("click", () =>
+            SocketManager.sendCommand("D")
+        );
+        $("#btn-toggle").addEventListener("click", () =>
+            SocketManager.sendCommand("T")
+        );
+    },
 
-socket.on("connect", () => {
-    console.log("Connected to server");
-    updateConnectionStatus(true);
-    showToast("success", "Connected to server");
-});
+    updateConnectionStatus(connected) {
+        this.elements.connectionStatus.className = connected
+            ? "status-connected"
+            : "status-disconnected";
+        this.elements.connectionStatus.querySelector("span").textContent =
+            connected ? "Connected" : "Disconnected";
+    },
 
-socket.on("disconnect", () => {
-    console.log("Disconnected from server");
-    updateConnectionStatus(false);
-    showToast("error", "Disconnected from server");
-});
+    updateSystemStatus(status) {
+        if (!status) return;
 
-socket.on("status", (status) => {
-    updateUI(status);
-    if (!isStatusEqual(status, lastLoggedStatus)) {
-        logActivity(status);
-        lastLoggedStatus = status;
-    }
-});
+        this.animateChange(
+            this.elements.systemStatus,
+            status.armed ? "Armed" : "Disarmed"
+        );
+        this.animateChange(
+            this.elements.alarmStatus,
+            status.active ? "ACTIVE" : "Inactive"
+        );
+        this.animateChange(
+            this.elements.temperature,
+            `${status.temp.toFixed(1)}°C`
+        );
 
-/* Helpers */
-const isStatusEqual = (s1, s2) =>
-    s1 &&
-    s2 &&
-    s1.armed === s2.armed &&
-    s1.active === s2.active &&
-    Math.abs(s1.temp - s2.temp) < 0.1;
+        this.elements.statusArmed.className = `status-indicator ${
+            status.armed ? "armed" : "disarmed"
+        }`;
+        this.elements.statusAlarm.className = `status-indicator ${
+            status.active ? "alarm-active" : "alarm-inactive"
+        }`;
 
-const animateChange = (el, newText) => {
-    if (el.textContent !== newText) {
-        el.style.animation = "fadeInOut 0.5s";
+        // Temperature indicator
+        let tempClass = "normal-temp";
+        if (status.temp > 30) tempClass = "high-temp";
+        else if (status.temp > 25) tempClass = "medium-temp";
+
+        this.elements.tempIndicator.className = "status-indicator " + tempClass;
+    },
+
+    animateChange(el, newText) {
+        if (el.textContent !== newText) {
+            el.style.animation = "fadeInOut 0.5s";
+            setTimeout(() => {
+                el.textContent = newText;
+                el.style.animation = "";
+            }, 250);
+        }
+    },
+
+    logActivity(status) {
+        if (!status) return;
+
+        const timestamp = new Date().toLocaleTimeString();
+        let icon, message;
+
+        if (status.active) {
+            icon = "fa-exclamation-triangle";
+            message = "Alarm triggered!";
+        } else if (status.armed) {
+            icon = "fa-lock";
+            message = "System armed";
+        } else {
+            icon = "fa-lock-open";
+            message = "System disarmed";
+        }
+
+        const activityItem = document.createElement("div");
+        activityItem.className = "activity-item fade-in";
+        activityItem.innerHTML = `
+            <div class="activity-icon"><i class="fas ${icon}" aria-hidden="true"></i></div>
+            <div class="activity-content">
+                <div class="activity-message">${message}</div>
+                <div class="activity-time">${timestamp}</div>
+            </div>
+        `;
+
+        this.elements.activityLog.insertBefore(
+            activityItem,
+            this.elements.activityLog.firstChild
+        );
+
+        // Keep only the last 10 activities
+        const ACTIVITY_LOG_SIZE = 10;
+        while (this.elements.activityLog.children.length > ACTIVITY_LOG_SIZE) {
+            this.elements.activityLog.removeChild(
+                this.elements.activityLog.lastChild
+            );
+        }
+    },
+
+    showToast(type, message, duration = 3000) {
+        const toast = document.createElement("div");
+        toast.className = `toast toast-${type}`;
+
+        const icon =
+            type === "success"
+                ? "fa-check-circle"
+                : type === "error"
+                ? "fa-exclamation-circle"
+                : type === "warning"
+                ? "fa-exclamation-triangle"
+                : "fa-info-circle";
+
+        toast.innerHTML = `<i class="fas ${icon}" aria-hidden="true"></i><span>${message}</span>`;
+
+        const container = $("#toast-container");
+        container.appendChild(toast);
+
         setTimeout(() => {
-            el.textContent = newText;
-            el.style.animation = "";
-        }, 250);
-    }
+            toast.style.animation = "slideOut 0.3s ease-out";
+            setTimeout(() => container.removeChild(toast), 300);
+        }, duration);
+    },
 };
 
-/* UI Updates */
-const updateConnectionStatus = (connected) => {
-    const statusEl = document.getElementById("connection-status");
-    statusEl.className = connected ? "status-connected" : "status-disconnected";
-    statusEl.querySelector("span").textContent = connected
-        ? "Connected"
-        : "Disconnected";
+/* Socket Communication */
+const SocketManager = {
+    socket: null,
+    lastLoggedStatus: null,
+
+    init() {
+        this.socket = io();
+        this.setupEventListeners();
+    },
+
+    setupEventListeners() {
+        this.socket.on("connect", () => {
+            console.log("Connected to server");
+            UIManager.updateConnectionStatus(true);
+            UIManager.showToast("success", "Connected to server");
+        });
+
+        this.socket.on("disconnect", () => {
+            console.log("Disconnected from server");
+            UIManager.updateConnectionStatus(false);
+            UIManager.showToast("error", "Disconnected from server");
+        });
+
+        this.socket.on("status", (status) => {
+            UIManager.updateSystemStatus(status);
+
+            if (!this.isStatusEqual(status, this.lastLoggedStatus)) {
+                UIManager.logActivity(status);
+                this.lastLoggedStatus = { ...status };
+            }
+        });
+
+        this.socket.on("system_error", (error) => {
+            console.error("System error:", error);
+            UIManager.showToast(
+                "error",
+                error.message || "System error occurred"
+            );
+        });
+    },
+
+    isStatusEqual(s1, s2) {
+        return (
+            s1 &&
+            s2 &&
+            s1.armed === s2.armed &&
+            s1.active === s2.active &&
+            Math.abs(s1.temp - s2.temp) < 0.1
+        );
+    },
+
+    sendCommand(cmd) {
+        if (!this.socket || !this.socket.connected) {
+            UIManager.showToast("error", "Cannot send command: Not connected");
+            return;
+        }
+
+        this.socket.emit("command", cmd);
+        UIManager.showToast("success", `Command sent: ${cmd}`);
+    },
 };
 
-const updateUI = (status) => {
-    animateChange(
-        document.getElementById("system-status"),
-        status.armed ? "Armed" : "Disarmed"
-    );
-    animateChange(
-        document.getElementById("alarm-status"),
-        status.active ? "ACTIVE" : "Inactive"
-    );
-    animateChange(
-        document.getElementById("temperature"),
-        `${status.temp.toFixed(1)}°C`
-    );
-
-    document.getElementById("status-armed").className = `status-indicator ${
-        status.armed ? "armed" : "disarmed"
-    }`;
-    document.getElementById("status-alarm").className = `status-indicator ${
-        status.active ? "alarm-active" : "alarm-inactive"
-    }`;
-
-    const tempIndicator = document.getElementById("temp-indicator");
-    tempIndicator.className =
-        "status-indicator " +
-        (status.temp > 30
-            ? "high-temp"
-            : status.temp > 25
-            ? "medium-temp"
-            : "normal-temp");
-};
-
-/* Activity Log */
-const ACTIVITY_LOG_SIZE = 10;
-const logActivity = (status) => {
-    const activityLog = document.getElementById("activity-log");
-    const timestamp = new Date().toLocaleTimeString();
-    const { icon, message } = status.active
-        ? { icon: "fa-exclamation-triangle", message: "Alarm triggered!" }
-        : status.armed
-        ? { icon: "fa-lock", message: "System armed" }
-        : { icon: "fa-lock-open", message: "System disarmed" };
-
-    const activityItem = document.createElement("div");
-    activityItem.className = "activity-item";
-    activityItem.innerHTML = `
-      <div class="activity-icon"><i class="fas ${icon}" aria-hidden="true"></i></div>
-      <div class="activity-content">
-        <div class="activity-message">${message}</div>
-        <div class="activity-time">${timestamp}</div>
-      </div>
-    `;
-    activityLog.insertBefore(activityItem, activityLog.firstChild);
-    while (activityLog.children.length > ACTIVITY_LOG_SIZE) {
-        activityLog.removeChild(activityLog.lastChild);
-    }
-};
-
-/* Toast Notifications */
-const showToast = (type, message) => {
-    const toast = document.createElement("div");
-    toast.className = `toast toast-${type}`;
-    const icon =
-        type === "success" ? "fa-check-circle" : "fa-exclamation-circle";
-    toast.innerHTML = `<i class="fas ${icon}" aria-hidden="true"></i><span>${message}</span>`;
-    const container = document.getElementById("toast-container");
-    container.appendChild(toast);
-    setTimeout(() => {
-        toast.style.animation = "slideOut 0.3s ease-out";
-        setTimeout(() => container.removeChild(toast), 300);
-    }, 3000);
-};
-
-/* Command Functions */
-const sendCommand = (cmd) => {
-    if (socket.connected) {
-        socket.emit("command", cmd);
-        showToast("success", `Command sent: ${cmd}`);
-    } else {
-        showToast("error", "Cannot send command: Not connected");
-    }
-};
-
-/* DOM Initialization */
+/* Initialize on page load */
 document.addEventListener("DOMContentLoaded", () => {
-    initTheme();
-    document
-        .getElementById("theme-switch")
-        .addEventListener("click", toggleTheme);
-    document
-        .getElementById("btn-arm")
-        .addEventListener("click", () => sendCommand("A"));
-    document
-        .getElementById("btn-disarm")
-        .addEventListener("click", () => sendCommand("D"));
-    document
-        .getElementById("btn-toggle")
-        .addEventListener("click", () => sendCommand("T"));
+    ThemeManager.init();
+    UIManager.init();
+    SocketManager.init();
 });

@@ -5,9 +5,9 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <meta
             name="description"
-            content="Sentinel - Smart Home Security System. Control and monitor your smart home with our secure system."
+            content="Sentinel - Smart Home Security System. Monitor and control your home security."
         />
-        <title>Sentinel - Smart Home Security System</title>
+        <title>Sentinel</title>
         <link rel="icon" type="image/svg+xml" href="favicon.svg" />
         <link
             rel="stylesheet"
@@ -16,7 +16,7 @@
         <link rel="stylesheet" href="styles.css" />
     </head>
 
-    <body class="light-mode">
+    <body data-theme="light">
         <div class="theme-toggle">
             <button id="theme-switch" aria-label="Toggle theme">
                 <i class="fas fa-moon"></i>
@@ -30,15 +30,13 @@
                     <h1>Sentinel</h1>
                 </div>
                 <p class="subtitle">Smart Home Security System</p>
-                <div class="connection-status-container">
-                    <div
-                        id="connection-status"
-                        class="status-disconnected"
-                        role="status"
-                    >
-                        <i class="fas fa-plug" aria-hidden="true"></i>
-                        <span>Disconnected</span>
-                    </div>
+                <div
+                    id="connection-status"
+                    class="status-disconnected"
+                    role="status"
+                >
+                    <i class="fas fa-plug" aria-hidden="true"></i>
+                    <span>Disconnected</span>
                 </div>
             </header>
 
@@ -162,7 +160,7 @@
             </main>
 
             <footer>
-                <p>&copy; 2025 Sentinel Security System</p>
+                <p>&copy; 2025 Sentinel - Smart Home Security System</p>
             </footer>
         </div>
 
