@@ -35,7 +35,7 @@ Sentinel is a smart home security system designed to monitor and control your ho
 1. **Clone the repository**:
 
     ```sh
-    git clone https://github.com/yourusername/sentinel.git
+    git clone https://github.com/roshan-parida/sentinel.git
     cd sentinel
     ```
 
